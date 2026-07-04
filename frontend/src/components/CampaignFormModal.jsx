@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X } from "lucide-react";
+import api from "../api/axios";
 
 const defaultForm = {
   title: "",
@@ -15,6 +16,10 @@ const defaultForm = {
   budgetCurrency: "USD",
   startDate: "",
   endDate: "",
+  placement: "phoenix_marketcity_pune",
+  repeatRate: 3,
+  videoDuration: 30,
+  dailyBudgetCap: 0,
   audienceSegments: "Commuters, Shoppers",
   regions: "NCR, Delhi",
   devices: "QR, Touchscreen",
@@ -29,9 +34,32 @@ const defaultForm = {
   goalEngagementRate: 6.5,
 };
 
+
 function CampaignFormModal({ open, onClose, onSubmit, submitting, initialValues }) {
-  const [form, setForm] = useState(() => buildInitialForm(initialValues));
+  const [form, setForm] = useState(() => buildInitialForm(initialValues, defaultForm));
   const [files, setFiles] = useState([]);
+  const [estimate, setEstimate] = useState(null);
+
+  const fetchEstimate = useCallback(async (f) => {
+    if (!f.startDate || !f.endDate || !f.placement) return;
+    try {
+      const res = await api.post("/campaigns/estimate", {
+        startDate: f.startDate,
+        endDate: f.endDate,
+        repeatRate: Number(f.repeatRate || 3),
+        dailyBudgetCap: Number(f.dailyBudgetCap || 0),
+        placement: f.placement,
+        videoDuration: Number(f.videoDuration || 30),
+      });
+      setEstimate(res.data);
+    } catch {
+      setEstimate(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEstimate(form);
+  }, [form.startDate, form.endDate, form.placement, form.repeatRate, form.videoDuration, form.dailyBudgetCap]);
 
   if (!open) {
     return null;
@@ -91,10 +119,29 @@ function CampaignFormModal({ open, onClose, onSubmit, submitting, initialValues 
             <Field label="Tags" name="tags" value={form.tags} onChange={handleChange} />
             <Field label="Start date" name="startDate" value={form.startDate} onChange={handleChange} type="date" />
             <Field label="End date" name="endDate" value={form.endDate} onChange={handleChange} type="date" />
+            <Field label="Repeat rate (plays/day)" name="repeatRate" value={form.repeatRate} onChange={handleChange} type="number" step="1" />
+            <Field label="Video duration (seconds)" name="videoDuration" value={form.videoDuration} onChange={handleChange} type="number" step="5" />
+            <Field label="Daily budget cap (₹)" name="dailyBudgetCap" value={form.dailyBudgetCap} onChange={handleChange} type="number" />
             <Field label="Goal impressions" name="goalImpressions" value={form.goalImpressions} onChange={handleChange} type="number" />
             <Field label="Goal conversions" name="goalConversions" value={form.goalConversions} onChange={handleChange} type="number" />
             <Field label="Goal engagement %" name="goalEngagementRate" value={form.goalEngagementRate} onChange={handleChange} type="number" step="0.1" />
           </div>
+
+          {/* Live cost estimate */}
+          {estimate && (
+            <div className="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-4 text-sm">
+              <p className="mb-2 font-semibold text-teal-800">💰 Estimated Campaign Cost</p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-slate-700">
+                <span>Duration</span><span className="font-medium">{estimate.durationDays} days</span>
+                <span>Off-peak days</span><span className="font-medium">{estimate.breakdown.offPeakDays} × 1×</span>
+                <span>Peak days</span><span className="font-medium text-orange-600">{estimate.breakdown.peakDays} × ×{estimate.breakdown.peakMultiplier}</span>
+                <span>Base cost</span><span className="font-medium">₹{estimate.breakdown.baseCost?.toLocaleString("en-IN")}</span>
+                <span>Platform fee + GST</span><span className="font-medium">₹{(estimate.breakdown.platformFee + estimate.breakdown.gst)?.toLocaleString("en-IN")}</span>
+                <span className="font-bold text-teal-900">Total estimate</span><span className="font-bold text-teal-900">₹{estimate.breakdown.estimatedCost?.toLocaleString("en-IN")}</span>
+              </div>
+              {estimate.budgetWarning && <p className="mt-2 text-xs text-red-600">{estimate.budgetWarning}</p>}
+            </div>
+          )}
 
           <TextArea
             label="Description"
@@ -171,18 +218,20 @@ function CampaignFormModal({ open, onClose, onSubmit, submitting, initialValues 
   );
 }
 
-function buildInitialForm(initialValues) {
-  if (!initialValues) {
-    return defaultForm;
-  }
+function buildInitialForm(initialValues, defaultForm) {
+  if (!initialValues) return defaultForm;
 
   return {
     ...defaultForm,
     ...initialValues,
     budgetAllocated: initialValues.budget?.allocated ?? defaultForm.budgetAllocated,
     budgetCurrency: initialValues.budget?.currency ?? defaultForm.budgetCurrency,
-    startDate: initialValues.schedule?.startDate?.slice?.(0, 10) || "",
-    endDate: initialValues.schedule?.endDate?.slice?.(0, 10) || "",
+    startDate: initialValues.startDate?.slice?.(0, 10) || initialValues.schedule?.startDate?.slice?.(0, 10) || "",
+    endDate: initialValues.endDate?.slice?.(0, 10) || initialValues.schedule?.endDate?.slice?.(0, 10) || "",
+    placement: initialValues.placement || defaultForm.placement,
+    repeatRate: initialValues.repeatRate ?? defaultForm.repeatRate,
+    videoDuration: initialValues.videoDuration ?? defaultForm.videoDuration,
+    dailyBudgetCap: initialValues.dailyBudgetCap ?? defaultForm.dailyBudgetCap,
     audienceSegments: (initialValues.targeting?.audienceSegments || []).join(", "),
     regions: (initialValues.targeting?.regions || []).join(", "),
     devices: (initialValues.targeting?.devices || []).join(", "),

@@ -5,41 +5,12 @@ const Razorpay = require("razorpay");
 const Payment = require("../models/Payment");
 const Campaign = require("../models/Campaign.model");
 const { authMiddleware } = require("../middleware/auth");
+const { calculateCampaignEstimate } = require("../utils/campaignPricing");
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
-
-// ---- Pricing config — swap real values in here once finalized ----
-const PRICING = {
-  baseRatePerDay: 150, // ₹150 per day base rate
-  repeatRateMultiplier: (rate) => 1 + (rate - 1) * 0.1, // e.g. 3x/day = 1.2x cost
-  platformFee: 500, // flat ₹500 platform fee
-  gstRate: 0.18, // 18% GST
-};
-
-const calculateCost = (startDate, endDate, repeatRate) => {
-  const days = Math.ceil(
-    (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24),
-  );
-  const multiplier = PRICING.repeatRateMultiplier(Number(repeatRate));
-  const base = PRICING.baseRatePerDay * days * multiplier;
-  const platformFee = PRICING.platformFee;
-  const subtotal = base + platformFee;
-  const gstAmount = subtotal * PRICING.gstRate;
-  const total = Math.round((subtotal + gstAmount) * 100) / 100; // rounded to paise
-
-  return {
-    durationDays: days,
-    baseRate: PRICING.baseRatePerDay,
-    repeatRateMultiplier: multiplier,
-    platformFee,
-    gstAmount: Math.round(gstAmount * 100) / 100,
-    total,
-    totalInPaise: Math.round(total * 100), // Razorpay expects paise
-  };
-};
 
 /**
  * GET /api/payments/estimate/:campaignId
@@ -57,24 +28,19 @@ router.get("/estimate/:campaignId", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Campaign not found." });
     }
 
-    if (campaign.status !== "draft") {
-      return res.status(400).json({
-        message: `Campaign is already in '${campaign.status}' status — cannot re-estimate.`,
-      });
-    }
+    const estimate = await calculateCampaignEstimate({
+      startDate: campaign.startDate,
+      endDate: campaign.endDate,
+      repeatRate: campaign.repeatRate,
+      dailyBudgetCap: campaign.dailyBudgetCap,
+      placement: campaign.placement,
+      videoDuration: campaign.videoDuration,
+    });
 
-    const estimate = calculateCost(
-      campaign.startDate,
-      campaign.endDate,
-      campaign.repeatRate,
-    );
-
-    // store the estimate on the campaign so the final charged amount
-    // matches what was shown at review time
-    campaign.estimatedCost = estimate.total;
+    campaign.estimatedCost = estimate.breakdown.estimatedCost;
     await campaign.save();
 
-    return res.status(200).json({ success: true, data: estimate });
+    return res.status(200).json({ success: true, data: { ...estimate, startDate: campaign.startDate, endDate: campaign.endDate } });
   } catch (error) {
     console.error("Estimate error:", error);
     return res.status(500).json({ message: "Failed to calculate estimate." });
@@ -97,21 +63,26 @@ router.post("/create-order/:campaignId", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Campaign not found." });
     }
 
-    if (campaign.status !== "draft") {
+    if (campaign.status !== "pending_payment") {
       return res.status(400).json({
-        message: `Campaign is already in '${campaign.status}' status.`,
+        message: `Campaign must be approved before payment. Current status: '${campaign.status}'.`,
       });
     }
 
-    // always recalculate server-side — never trust a price from the client
-    const estimate = calculateCost(
-      campaign.startDate,
-      campaign.endDate,
-      campaign.repeatRate,
-    );
+    // always recalculate server-side using the same formula as the estimator
+    const estimate = await calculateCampaignEstimate({
+      startDate: campaign.startDate,
+      endDate: campaign.endDate,
+      repeatRate: campaign.repeatRate,
+      dailyBudgetCap: campaign.dailyBudgetCap,
+      placement: campaign.placement,
+      videoDuration: campaign.videoDuration,
+    });
+
+    const totalPaise = estimate.breakdown.estimatedCost * 100;
 
     const order = await razorpay.orders.create({
-      amount: estimate.totalInPaise,
+      amount: totalPaise,
       currency: "INR",
       receipt: campaign._id.toString(),
       notes: {
@@ -121,35 +92,35 @@ router.post("/create-order/:campaignId", authMiddleware, async (req, res) => {
       },
     });
 
-    // persist the payment record with status "created"
     const payment = await Payment.create({
       campaign: campaign._id,
       advertiser: req.user.userId,
       razorpayOrderId: order.id,
-      amount: estimate.totalInPaise,
+      amount: totalPaise,
       currency: "INR",
       breakdown: {
-        baseRate: estimate.baseRate,
         durationDays: estimate.durationDays,
-        repeatRateMultiplier: estimate.repeatRateMultiplier,
-        platformFee: estimate.platformFee,
-        gstAmount: estimate.gstAmount,
+        peakDays: estimate.breakdown.peakDays,
+        offPeakDays: estimate.breakdown.offPeakDays,
+        peakMultiplier: estimate.breakdown.peakMultiplier,
+        baseCost: estimate.breakdown.baseCost,
+        placementMultiplier: estimate.breakdown.placementMultiplier,
+        platformFee: estimate.breakdown.platformFee,
+        gstAmount: estimate.breakdown.gst,
       },
       status: "created",
     });
 
-    // flip campaign to pending_payment so it can't get re-ordered
-    campaign.status = "pending_payment";
-    campaign.estimatedCost = estimate.total;
+    campaign.estimatedCost = estimate.breakdown.estimatedCost;
     await campaign.save();
 
     return res.status(201).json({
       success: true,
       data: {
         orderId: order.id,
-        amount: estimate.totalInPaise,
+        amount: totalPaise,
         currency: "INR",
-        keyId: process.env.RAZORPAY_KEY_ID, // frontend needs this to open the checkout widget
+        keyId: process.env.RAZORPAY_KEY_ID,
         paymentId: payment._id,
         estimate,
       },

@@ -172,6 +172,43 @@ router.get("/revenue", async (req, res) => {
 });
 
 /**
+ * PATCH /api/admin/payments/:id/status
+ */
+router.patch("/:id/status", async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowed = ["created", "paid", "failed", "refunded", "partially_refunded"];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ message: `Invalid status. Allowed: ${allowed.join(", ")}` });
+    }
+
+    const payment = await Payment.findById(req.params.id);
+    if (!payment) return res.status(404).json({ message: "Payment not found." });
+
+    payment.status = status;
+    if (status === "paid" && !payment.invoiceNumber) {
+      payment.invoiceNumber = `INV-${Date.now()}-${payment._id.toString().slice(-6).toUpperCase()}`;
+    }
+    await payment.save();
+
+    if (status === "paid" && payment.campaign) {
+      const amountInRupees = payment.amount / 100;
+      await Campaign.findByIdAndUpdate(payment.campaign, {
+        status: "public",
+        isPublic: true,
+        publishedAt: new Date(),
+        estimatedCost: amountInRupees,
+      });
+    }
+
+    return res.status(200).json({ success: true, data: payment });
+  } catch (error) {
+    console.error("Admin update payment status error:", error);
+    return res.status(500).json({ message: "Failed to update payment status." });
+  }
+});
+
+/**
  * GET /api/admin/payments/:id
  * Single payment detail including full breakdown and refund info.
  */
@@ -197,8 +234,6 @@ router.get("/:id", async (req, res) => {
 
 /**
  * POST /api/admin/payments/:id/refund
- * Trigger a full or partial refund via Razorpay.
- * Body: { amount (optional, in paise — omit for full refund), reason }
  */
 router.post("/:id/refund", async (req, res) => {
   try {
@@ -256,5 +291,9 @@ router.post("/:id/refund", async (req, res) => {
     });
   }
 });
+
+/**
+ * PATCH /api/admin/payments/:id/status — moved above, removing duplicate
+ */
 
 module.exports = router;

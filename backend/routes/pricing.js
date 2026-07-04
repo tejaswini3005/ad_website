@@ -19,7 +19,7 @@ router.get("/", authMiddleware, async (_req, res) => {
 router.put("/", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
     const {
-      baseRatePerDay, platformFee, gstRate,
+      baseRatePerDay, costPerSecond, platformFee, gstRate,
       defaultDurationDays, defaultRepeatRate, minRepeatRate, maxRepeatRate,
       placementMultipliers,
     } = req.body;
@@ -28,6 +28,7 @@ router.put("/", authMiddleware, requireRole("admin"), async (req, res) => {
     if (!config) config = new PricingConfig();
 
     if (baseRatePerDay !== undefined) config.baseRatePerDay = baseRatePerDay;
+    if (costPerSecond !== undefined) config.costPerSecond = costPerSecond;
     if (platformFee !== undefined) config.platformFee = platformFee;
     if (gstRate !== undefined) config.gstRate = gstRate;
     if (defaultDurationDays !== undefined) config.defaultDurationDays = defaultDurationDays;

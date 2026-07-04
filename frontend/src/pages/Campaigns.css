@@ -651,6 +651,83 @@
   }
 }
 
+.campaign-badge-payment {
+  background: rgba(0, 168, 204, 0.18);
+  color: #005570;
+  border: 1px solid rgba(0, 168, 204, 0.3);
+  animation: pulse-badge 2s infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.campaign-payment-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: linear-gradient(135deg, rgba(0, 168, 204, 0.08), rgba(0, 85, 204, 0.06));
+  border: 1.5px solid rgba(0, 168, 204, 0.3);
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  margin: 0.75rem 0;
+}
+
+.campaign-payment-banner-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.campaign-payment-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.campaign-payment-title {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  margin-bottom: 0.2rem;
+}
+
+.campaign-payment-desc {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.campaign-payment-amount {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-blue);
+  margin-top: 0.25rem;
+}
+
+.campaign-payment-btn {
+  flex-shrink: 0;
+  padding: 0.6rem 1.25rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #00abc9, #005cd6);
+  color: #fff;
+  font-family: var(--font-heading);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity 0.2s, transform 0.2s;
+  box-shadow: 0 4px 12px rgba(0, 85, 204, 0.25);
+}
+
+.campaign-payment-btn:hover {
+  opacity: 0.9;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
 .campaign-report-actions {
   display: flex;
   gap: 12px;

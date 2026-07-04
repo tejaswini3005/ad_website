@@ -36,7 +36,13 @@ const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 function PricingCalculator() {
   const [pricing, setPricing] = useState(null);
-  const [calc, setCalc] = useState({ placement: "phoenix_marketcity_pune", startDate: today, endDate: future, repeatRate: 3 });
+  const [calc, setCalc] = useState({
+    placement: "phoenix_marketcity_pune",
+    startDate: today,
+    endDate: future,
+    repeatRate: 3,
+    videoDuration: 30,
+  });
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -56,6 +62,7 @@ function PricingCalculator() {
         repeatRate: Number(calc.repeatRate),
         dailyBudgetCap: 0,
         placement: calc.placement,
+        videoDuration: Number(calc.videoDuration),
       });
       setResult(res.data);
     } catch {
@@ -73,6 +80,7 @@ function PricingCalculator() {
   };
 
   const placementMult = pricing?.placementMultipliers?.[calc.placement] ?? "—";
+  const costPerSec = pricing?.costPerSecond ?? 10;
 
   return (
     <div className="calc-page">
@@ -88,8 +96,8 @@ function PricingCalculator() {
         {pricing && (
           <div className="calc-rates-strip">
             <div className="calc-rate-item">
-              <span className="calc-rate-val">{fmt(pricing.baseRatePerDay)}</span>
-              <span className="calc-rate-label">Base rate / day</span>
+              <span className="calc-rate-val">{fmt(costPerSec)}</span>
+              <span className="calc-rate-label">Cost per second</span>
             </div>
             <div className="calc-rate-item">
               <span className="calc-rate-val">{fmt(pricing.platformFee)}</span>
@@ -102,6 +110,10 @@ function PricingCalculator() {
             <div className="calc-rate-item">
               <span className="calc-rate-val">×{placementMult}</span>
               <span className="calc-rate-label">Location multiplier</span>
+            </div>
+            <div className="calc-rate-item">
+              <span className="calc-rate-val">×{pricing.peakMultiplier ?? 1.5}</span>
+              <span className="calc-rate-label">Peak day multiplier</span>
             </div>
           </div>
         )}
@@ -137,6 +149,18 @@ function PricingCalculator() {
             </div>
 
             <label className="calc-label">
+              Video Duration (seconds)
+              <div className="calc-repeat-row">
+                <input type="range" min="5" max="120" step="5"
+                  value={calc.videoDuration}
+                  onChange={(e) => set("videoDuration", Number(e.target.value))}
+                  className="calc-slider" />
+                <span className="calc-repeat-val">{calc.videoDuration}s</span>
+              </div>
+              <p className="calc-hint">Longer video = higher base cost per play</p>
+            </label>
+
+            <label className="calc-label">
               Repeat Rate — plays per day
               <div className="calc-repeat-row">
                 <input type="range" min="1" max="20" step="1" value={calc.repeatRate}
@@ -150,10 +174,26 @@ function PricingCalculator() {
               <div className="calc-formula-preview">
                 <p className="calc-formula-title">Pricing formula</p>
                 <div className="calc-formula-steps">
-                  <div className="calc-step"><span className="calc-step-num">1</span><span>Duration × Repeat Rate × {fmt(pricing.baseRatePerDay)}/day = Base Cost</span></div>
-                  <div className="calc-step"><span className="calc-step-num">2</span><span>Base Cost × {getPlacementLabel(calc.placement)} multiplier (×{placementMult}) = Adjusted</span></div>
-                  <div className="calc-step"><span className="calc-step-num">3</span><span>Adjusted + Platform Fee ({fmt(pricing.platformFee)}) = Subtotal</span></div>
-                  <div className="calc-step"><span className="calc-step-num">4</span><span>Subtotal + GST ({(pricing.gstRate * 100).toFixed(0)}%) = <strong>Total</strong></span></div>
+                  <div className="calc-step">
+                    <span className="calc-step-num">1</span>
+                    <span>Video Duration ({calc.videoDuration}s) × {fmt(costPerSec)}/s × {calc.repeatRate}x/day = Daily Base</span>
+                  </div>
+                  <div className="calc-step">
+                    <span className="calc-step-num">2</span>
+                    <span>(Off-peak days × 1× + Peak days × ×{pricing.peakMultiplier ?? 1.5}) × Daily Base = Base Cost</span>
+                  </div>
+                  <div className="calc-step">
+                    <span className="calc-step-num">3</span>
+                    <span>Base Cost × {getPlacementLabel(calc.placement)} (×{placementMult}) = Adjusted Cost</span>
+                  </div>
+                  <div className="calc-step">
+                    <span className="calc-step-num">4</span>
+                    <span>Adjusted Cost + Platform Fee ({fmt(pricing.platformFee)}) = Subtotal</span>
+                  </div>
+                  <div className="calc-step">
+                    <span className="calc-step-num">5</span>
+                    <span>Subtotal + GST ({(pricing.gstRate * 100).toFixed(0)}%) = <strong>Total</strong></span>
+                  </div>
                 </div>
               </div>
             )}
@@ -169,19 +209,17 @@ function PricingCalculator() {
               <p className="calc-result-location">📍 {getPlacementLabel(calc.placement)}</p>
 
               <div className="calc-formula">
-                <div className="calc-formula-row"><span>Campaign Duration</span><span>{result.durationDays} days</span></div>
+                <div className="calc-formula-row"><span>Video Duration</span><span>{result.breakdown.videoDurationSec}s</span></div>
+                <div className="calc-formula-row"><span>Cost Per Second</span><span>{fmt(result.breakdown.costPerSecond)}/s</span></div>
                 <div className="calc-formula-row"><span>Repeat Rate</span><span>{result.breakdown.repeatRate}× per day</span></div>
-                <div className="calc-formula-row"><span>Base Rate Per Day</span><span>{fmt(result.breakdown.baseRatePerDay)}</span></div>
-                <div className="calc-formula-divider">
-                  <span className="calc-formula-eq">
-                    {result.durationDays}d × {result.breakdown.repeatRate}x × {fmt(result.breakdown.baseRatePerDay)} = {fmt(result.breakdown.baseCost)}
-                  </span>
-                </div>
+                <div className="calc-formula-row"><span>Campaign Duration</span><span>{result.durationDays} days</span></div>
+                <div className="calc-formula-row"><span>Off-Peak Days</span><span>{result.breakdown.offPeakDays} days × 1×</span></div>
+                <div className="calc-formula-row calc-peak"><span>Peak Days</span><span>{result.breakdown.peakDays} days × ×{result.breakdown.peakMultiplier}</span></div>
                 <div className="calc-formula-row"><span>Base Cost</span><span>{fmt(result.breakdown.baseCost)}</span></div>
                 <div className="calc-formula-row"><span>Location Multiplier</span><span>×{result.breakdown.placementMultiplier}</span></div>
                 <div className="calc-formula-row calc-highlight"><span>Adjusted Cost</span><span>{fmt(result.breakdown.adjustedCost)}</span></div>
                 <div className="calc-formula-row"><span>Platform Fee</span><span>+{fmt(result.breakdown.platformFee)}</span></div>
-                <div className="calc-formula-row"><span>GST (18%)</span><span>+{fmt(result.breakdown.gst)}</span></div>
+                <div className="calc-formula-row"><span>GST</span><span>+{fmt(result.breakdown.gst)}</span></div>
                 <div className="calc-formula-total"><span>Total Estimated Cost</span><span>{fmt(result.breakdown.estimatedCost)}</span></div>
                 <div className="calc-formula-row calc-daily"><span>Average Daily Cost</span><span>{fmt(result.avgDailyCost)}</span></div>
               </div>
