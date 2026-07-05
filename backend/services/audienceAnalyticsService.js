@@ -5,6 +5,12 @@ const Campaign = require("../models/Campaign.model");
 const AGE_GROUPS = ["0-12", "13-18", "19-25", "26-35", "36-50", "50+"];
 const GENDERS = ["male", "female", "unknown"];
 
+// Analytics (both user and admin pages) only ever consider campaigns in
+// one of these lifecycle states — drafts, pending review/payment, and
+// rejected/cancelled campaigns never show up here, since there's nothing
+// meaningful to report on yet (or the campaign never actually ran).
+const ANALYTICS_STATUSES = ["public", "paused", "completed"];
+
 const randomOf = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
@@ -32,6 +38,11 @@ function weightedRandomHour() {
  * starts flowing in.
  */
 async function ensureDummyAudienceEvents({ force = false, daysBack = 14, perCampaignPerDay = 45 } = {}) {
+  const existingCount = await AudienceEvent.countDocuments({});
+  if (existingCount > 0 && !force) {
+    return { seeded: false, count: existingCount };
+  }
+
   const campaigns = await Campaign.find({}, { _id: 1, robotPlacement: 1 }).lean();
   if (campaigns.length === 0) {
     return { seeded: false, count: 0, reason: "no campaigns to attach dummy events to" };
@@ -41,20 +52,11 @@ async function ensureDummyAudienceEvents({ force = false, daysBack = 14, perCamp
     await AudienceEvent.deleteMany({ isDemoData: true });
   }
 
-  // Only seed campaigns that have no audience events yet
-  const campaignsWithEvents = await AudienceEvent.distinct("campaign");
-  const seededIds = new Set(campaignsWithEvents.map(String));
-  const targetCampaigns = force ? campaigns : campaigns.filter((c) => !seededIds.has(String(c._id)));
-
-  if (targetCampaigns.length === 0) {
-    return { seeded: false, count: 0 };
-  }
-
   const robotIds = ["RBT-01", "RBT-02", "RBT-03", "RBT-04"];
   const now = new Date();
   const docs = [];
 
-  for (const campaign of targetCampaigns) {
+  for (const campaign of campaigns) {
     for (let dayOffset = 0; dayOffset < daysBack; dayOffset += 1) {
       const eventsToday = randomInt(
         Math.max(5, perCampaignPerDay - 15),
@@ -87,26 +89,31 @@ async function ensureDummyAudienceEvents({ force = false, daysBack = 14, perCamp
 }
 
 /**
- * Helper: resolve the list of campaign _ids owned by a given user.
- * Returns null when ownerId is not provided, meaning "no restriction"
- * (used by the admin/unscoped callers).
+ * Helper: resolve the list of campaign _ids that analytics should cover.
+ * Always restricted to ANALYTICS_STATUSES (public/paused/completed).
+ * When ownerId is provided, further restricted to that user's own
+ * campaigns — this is the single choke point both the user page and
+ * the admin page go through, so "user sees only their own, admin sees
+ * everyone, both only for live/finished campaigns" stays consistent.
  */
-async function resolveOwnedCampaignIds(ownerId) {
-  if (!ownerId) return null;
-  const owned = await Campaign.find({ owner: ownerId }, { _id: 1 }).lean();
-  return owned.map((c) => c._id);
+async function resolveScopedCampaignIds(ownerId = null) {
+  const filter = { status: { $in: ANALYTICS_STATUSES } };
+  if (ownerId) filter.owner = ownerId;
+  const campaigns = await Campaign.find(filter, { _id: 1 }).lean();
+  return campaigns.map((c) => c._id);
 }
 
 /**
  * Overview numbers for the top metric cards.
  * When ownerId is provided, restricts to that user's own campaigns only.
  * When omitted (admin use), covers the whole network.
+ * Either way, only public/paused/completed campaigns are counted.
  */
 async function getOverviewAnalytics(ownerId = null) {
   await ensureDummyAudienceEvents();
 
-  const campaignIds = await resolveOwnedCampaignIds(ownerId);
-  const eventFilter = campaignIds ? { campaign: { $in: campaignIds } } : {};
+  const campaignIds = await resolveScopedCampaignIds(ownerId);
+  const eventFilter = { campaign: { $in: campaignIds } };
 
   const [totalImpressions, activeRobots, campaignsWithEvents] = await Promise.all([
     AudienceEvent.countDocuments(eventFilter),
@@ -133,9 +140,11 @@ async function getOverviewAnalytics(ownerId = null) {
 /**
  * Lightweight campaign list for a dropdown selector on the analytics page.
  * When ownerId is provided, only that user's own campaigns are listed.
+ * Either way, only public/paused/completed campaigns are shown.
  */
 async function listCampaignsForAnalytics(ownerId = null) {
-  const filter = ownerId ? { owner: ownerId } : {};
+  const filter = { status: { $in: ANALYTICS_STATUSES } };
+  if (ownerId) filter.owner = ownerId;
   const campaigns = await Campaign.find(filter, { title: 1, brandName: 1, status: 1 })
     .sort({ createdAt: -1 })
     .lean();
@@ -160,16 +169,17 @@ async function listCampaignsForAnalytics(ownerId = null) {
 async function getCampaignAudienceAnalytics(campaignId, ownerId = null) {
   await ensureDummyAudienceEvents();
 
+  // Always enforce: campaign must be public/paused/completed, and if a
+  // specific user is asking (not admin), it must be their own campaign.
+  const campaignQuery = { _id: campaignId, status: { $in: ANALYTICS_STATUSES } };
   if (ownerId) {
-    const owned = await Campaign.findOne(
-      { _id: campaignId, owner: ownerId },
-      { _id: 1 },
-    ).lean();
-    if (!owned) {
-      const err = new Error("Campaign not found");
-      err.statusCode = 404;
-      throw err;
-    }
+    campaignQuery.owner = ownerId;
+  }
+  const eligible = await Campaign.findOne(campaignQuery, { _id: 1 }).lean();
+  if (!eligible) {
+    const err = new Error("Campaign not found");
+    err.statusCode = 404;
+    throw err;
   }
 
   const [totalImpressions, ageAgg, genderAgg, hourlyAgg, ageByHourAgg] = await Promise.all([
@@ -274,29 +284,28 @@ async function getCampaignAudienceAnalytics(campaignId, ownerId = null) {
  * is fully wired up.
  */
 async function getRevenueAnalytics() {
-  const Payment = require("../models/Payment");
-
-  // Only count paid/partially_refunded payments — same logic as AdminPayments page
-  const payments = await Payment.find(
-    { status: { $in: ["paid", "partially_refunded"] } },
-    { amount: 1, campaign: 1 },
-  )
-    .populate("campaign", "brandName")
-    .lean();
+  const campaigns = await Campaign.find(
+    { status: { $in: ANALYTICS_STATUSES } },
+    { brandName: 1, estimatedCost: 1, budget: 1, status: 1 },
+  ).lean();
 
   let totalRevenue = 0;
   const byBrandMap = {};
 
-  payments.forEach((p) => {
-    const amountInRupees = (p.amount || 0) / 100;
-    const brandName = p.campaign?.brandName || "Unknown";
-    totalRevenue += amountInRupees;
+  campaigns.forEach((c) => {
+    const spent = c.budget?.spent || 0;
+    const revenue = spent > 0 ? spent : c.estimatedCost || 0;
+    totalRevenue += revenue;
 
-    if (!byBrandMap[brandName]) {
-      byBrandMap[brandName] = { brandName, revenue: 0, campaignCount: 0 };
+    if (!byBrandMap[c.brandName]) {
+      byBrandMap[c.brandName] = {
+        brandName: c.brandName,
+        revenue: 0,
+        campaignCount: 0,
+      };
     }
-    byBrandMap[brandName].revenue += amountInRupees;
-    byBrandMap[brandName].campaignCount += 1;
+    byBrandMap[c.brandName].revenue += revenue;
+    byBrandMap[c.brandName].campaignCount += 1;
   });
 
   const byBrand = Object.values(byBrandMap)
@@ -305,7 +314,7 @@ async function getRevenueAnalytics() {
 
   return {
     totalRevenue: Number(totalRevenue.toFixed(2)),
-    totalCampaigns: payments.length,
+    totalCampaigns: campaigns.length,
     topBrand: byBrand[0]?.brandName || null,
     byBrand,
   };

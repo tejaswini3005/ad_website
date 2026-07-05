@@ -4,21 +4,22 @@ const {
   getOverviewAnalytics,
   listCampaignsForAnalytics,
   getCampaignAudienceAnalytics,
-  getRevenueAnalytics,
 } = require("../services/audienceAnalyticsService");
 
 /**
- * Admin analytics controller — unscoped (no ownerId passed), so it
- * always covers every campaign/company on the network.
+ * User-facing analytics controller.
+ * Every function is scoped to req.user.userId (the field set by the JWT
+ * payload in authController.js — NOT req.user.id/._id), so a normal
+ * user only ever sees data for campaigns THEY own.
  */
 
-const getOverview = asyncHandler(async (_req, res) => {
-  const data = await getOverviewAnalytics();
+const getOverview = asyncHandler(async (req, res) => {
+  const data = await getOverviewAnalytics(req.user.userId);
   res.status(200).json({ success: true, data });
 });
 
-const getCampaignsList = asyncHandler(async (_req, res) => {
-  const data = await listCampaignsForAnalytics();
+const getCampaignsList = asyncHandler(async (req, res) => {
+  const data = await listCampaignsForAnalytics(req.user.userId);
   res.status(200).json({ success: true, data });
 });
 
@@ -27,14 +28,8 @@ const getCampaignAnalytics = asyncHandler(async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(campaignId)) {
     return res.status(400).json({ success: false, message: "Invalid campaign id" });
   }
-  const data = await getCampaignAudienceAnalytics(campaignId);
+  const data = await getCampaignAudienceAnalytics(campaignId, req.user.userId);
   res.status(200).json({ success: true, data });
 });
 
-// GET /api/admin/analytics/revenue — admin-only revenue summary + per-brand breakdown
-const getRevenue = asyncHandler(async (_req, res) => {
-  const data = await getRevenueAnalytics();
-  res.status(200).json({ success: true, data });
-});
-
-module.exports = { getOverview, getCampaignsList, getCampaignAnalytics, getRevenue };
+module.exports = { getOverview, getCampaignsList, getCampaignAnalytics };
