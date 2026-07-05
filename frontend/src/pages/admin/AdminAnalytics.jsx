@@ -21,6 +21,12 @@ import { compactNumber } from "../../utils/format";
 import "./AdminAnalytics.css";
 import "../FeaturePages.css";
 
+const currencyFormatter = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 2,
+});
+
 const AGE_COLORS = {
   "0-12": "#89a9c9",
   "13-18": "#00a8cc",
@@ -165,7 +171,7 @@ function AdminAnalytics() {
 
         <div className="feature-metrics-row" style={{ marginTop: "1rem", marginBottom: "1.25rem" }}>
           <div className="feature-metric-card">
-            <span>{revenue ? `$${compactNumber(revenue.totalRevenue)}` : "—"}</span>
+            <span>{revenue ? currencyFormatter.format(revenue.totalRevenue) : "—"}</span>
             <p>Total revenue</p>
           </div>
           <div className="feature-metric-card">
@@ -191,7 +197,7 @@ function AdminAnalytics() {
                     tick={{ fill: "#2a4a6a", fontSize: 12 }}
                     width={110}
                   />
-                  <Tooltip formatter={(value) => [`$${compactNumber(value)}`, "Revenue"]} />
+                  <Tooltip formatter={(value) => [currencyFormatter.format(value), "Revenue"]} />
                   <Bar dataKey="revenue" radius={[0, 10, 10, 0]}>
                     {topBrandsChartData.map((entry) => (
                       <Cell key={entry.brandName} fill={entry.fill} />
@@ -216,7 +222,7 @@ function AdminAnalytics() {
                       <td style={{ padding: "0.5rem" }}>{row.brandName}</td>
                       <td style={{ textAlign: "right", padding: "0.5rem" }}>{row.campaignCount}</td>
                       <td style={{ textAlign: "right", padding: "0.5rem" }}>
-                        ${compactNumber(row.revenue)}
+                        {currencyFormatter.format(row.revenue)}
                       </td>
                     </tr>
                   ))}

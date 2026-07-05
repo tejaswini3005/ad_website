@@ -32,11 +32,6 @@ function weightedRandomHour() {
  * starts flowing in.
  */
 async function ensureDummyAudienceEvents({ force = false, daysBack = 14, perCampaignPerDay = 45 } = {}) {
-  const existingCount = await AudienceEvent.countDocuments({});
-  if (existingCount > 0 && !force) {
-    return { seeded: false, count: existingCount };
-  }
-
   const campaigns = await Campaign.find({}, { _id: 1, robotPlacement: 1 }).lean();
   if (campaigns.length === 0) {
     return { seeded: false, count: 0, reason: "no campaigns to attach dummy events to" };
@@ -46,11 +41,20 @@ async function ensureDummyAudienceEvents({ force = false, daysBack = 14, perCamp
     await AudienceEvent.deleteMany({ isDemoData: true });
   }
 
+  // Only seed campaigns that have no audience events yet
+  const campaignsWithEvents = await AudienceEvent.distinct("campaign");
+  const seededIds = new Set(campaignsWithEvents.map(String));
+  const targetCampaigns = force ? campaigns : campaigns.filter((c) => !seededIds.has(String(c._id)));
+
+  if (targetCampaigns.length === 0) {
+    return { seeded: false, count: 0 };
+  }
+
   const robotIds = ["RBT-01", "RBT-02", "RBT-03", "RBT-04"];
   const now = new Date();
   const docs = [];
 
-  for (const campaign of campaigns) {
+  for (const campaign of targetCampaigns) {
     for (let dayOffset = 0; dayOffset < daysBack; dayOffset += 1) {
       const eventsToday = randomInt(
         Math.max(5, perCampaignPerDay - 15),
