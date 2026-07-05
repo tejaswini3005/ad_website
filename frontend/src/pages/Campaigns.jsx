@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import api, { API_ORIGIN } from "../api/axios";
 import { useAuth } from "../context/AuthContext";
@@ -43,6 +43,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-IN", {
 
 function Campaigns() {
   const navigate = useNavigate();
+  const location = useLocation();
   const fileInputRef = useRef(null);
   const pdfInputRef = useRef(null);
   const { user, loading: authLoading } = useAuth();
@@ -105,6 +106,18 @@ function Campaigns() {
     };
   }, [authLoading, user, navigate]);
 
+  // If navigated here from Billing with an editId, auto-trigger edit
+  useEffect(() => {
+    const editId = location.state?.editId;
+    if (!editId || !campaigns.length) return;
+    const target = campaigns.find((c) => c._id === editId);
+    if (target) {
+      handleEdit(target);
+      // clear state so refresh doesn't re-trigger
+      window.history.replaceState({}, "");
+    }
+  }, [location.state?.editId, campaigns]);
+
   const fetchEstimate = async (updatedForm) => {
     const { startDate, endDate, repeatRate, dailyBudgetCap, placement } = updatedForm;
     if (!startDate || !endDate || !repeatRate) return;
@@ -159,6 +172,7 @@ function Campaigns() {
       endDate: campaign.endDate?.slice(0, 10) || "",
       repeatRate: campaign.repeatRate ?? 3,
       dailyBudgetCap: campaign.dailyBudgetCap || "",
+      placement: campaign.placement || "other",
     });
     setFiles([]);
     setError("");

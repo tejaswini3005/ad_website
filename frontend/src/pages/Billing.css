@@ -218,6 +218,47 @@
   opacity: 0.55;
 }
 
+.billing-secondary-button {
+  border: 1px solid rgba(0, 85, 204, 0.3);
+  border-radius: 16px;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-heading);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: rgba(0, 85, 204, 0.07);
+  color: var(--accent-blue);
+  transition: background 0.2s;
+}
+
+.billing-secondary-button:hover {
+  background: rgba(0, 85, 204, 0.14);
+}
+
+.billing-danger-button {
+  border: 1px solid rgba(178, 41, 75, 0.3);
+  border-radius: 16px;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-heading);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: rgba(178, 41, 75, 0.07);
+  color: #b2294b;
+  transition: background 0.2s;
+}
+
+.billing-danger-button:hover {
+  background: rgba(178, 41, 75, 0.14);
+}
+
+.billing-danger-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 @media (max-width: 640px) {
   .billing-page {
     padding: 1.25rem 1rem 2rem;

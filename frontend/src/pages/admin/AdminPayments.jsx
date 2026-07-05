@@ -120,6 +120,29 @@ function AdminPayments() {
     fetchPayments(next, statusFilter);
   };
 
+  const [statusChangingId, setStatusChangingId] = useState(null);
+  const [newStatus, setNewStatus] = useState("");
+  const [statusError, setStatusError] = useState("");
+
+  const openStatusChange = (payment) => {
+    setStatusChangingId(payment._id);
+    setNewStatus(payment.status);
+    setStatusError("");
+    setRefundingId(null);
+  };
+
+  const handleStatusChange = async (paymentId) => {
+    setStatusError("");
+    try {
+      await api.patch(`/admin/payments/${paymentId}/status`, { status: newStatus });
+      setStatusChangingId(null);
+      fetchPayments(page, statusFilter);
+      fetchRevenue();
+    } catch (err) {
+      setStatusError(err.response?.data?.message || "Failed to update status.");
+    }
+  };
+
   const openRefund = (paymentId) => {
     setRefundingId(paymentId);
     setRefundReason("");
@@ -351,6 +374,24 @@ function AdminPayments() {
                         {STATUS_LABELS[payment.status] || payment.status}
                       </span>
 
+                      <button
+                            onClick={() => openStatusChange(payment)}
+                            style={{
+                              padding: "0.35rem 0.85rem",
+                              borderRadius: "12px",
+                              border: "1px solid rgba(0,85,204,0.3)",
+                              background: "rgba(0,85,204,0.08)",
+                              color: "var(--accent-blue)",
+                              fontFamily: "var(--font-heading)",
+                              fontSize: "0.75rem",
+                              letterSpacing: "0.06em",
+                              textTransform: "uppercase",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Change Status
+                          </button>
+
                       {(payment.status === "paid" ||
                         payment.status === "partially_refunded" ||
                         payment.status === "refunded") && (
@@ -428,6 +469,38 @@ function AdminPayments() {
                       )}
                     </div>
                   </div>
+
+                  {statusChangingId === payment._id && (
+                    <div style={{ marginTop: "1rem", padding: "1rem", borderRadius: "16px", background: "rgba(0,85,204,0.05)", border: "1px solid rgba(0,85,204,0.15)" }}>
+                      <p style={{ fontFamily: "var(--font-heading)", fontSize: "0.82rem", color: "var(--accent-blue)", marginBottom: "0.75rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                        Change Payment Status
+                      </p>
+                      <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
+                        <select
+                          value={newStatus}
+                          onChange={(e) => setNewStatus(e.target.value)}
+                          style={{ padding: "0.65rem 0.85rem", borderRadius: "12px", border: "1px solid rgba(0,85,204,0.2)", background: "#fff", color: "var(--text-primary)", fontSize: "0.9rem", flex: 1 }}
+                        >
+                          {Object.entries(STATUS_LABELS).map(([val, label]) => (
+                            <option key={val} value={val}>{label}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleStatusChange(payment._id)}
+                          style={{ padding: "0.65rem 1.2rem", borderRadius: "12px", border: "none", background: "var(--accent-blue)", color: "#fff", fontFamily: "var(--font-heading)", fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer" }}
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={() => setStatusChangingId(null)}
+                          style={{ padding: "0.65rem 1rem", borderRadius: "12px", border: "1px solid rgba(0,85,204,0.15)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "var(--font-heading)", fontSize: "0.8rem" }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {statusError && <p style={{ color: "var(--danger)", fontSize: "0.88rem", marginTop: "0.5rem" }}>{statusError}</p>}
+                    </div>
+                  )}
 
                   {refundingId === payment._id && (
                     <div

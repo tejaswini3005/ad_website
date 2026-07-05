@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import API from "../api/axios";
 import { useAuth } from "../context/useAuth";
@@ -46,35 +46,48 @@ function Billing() {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
-  const [payingId, setPayingId] = useState(null); // campaign._id currently being paid
+  const [payingId, setPayingId] = useState(null);
   const [paymentError, setPaymentError] = useState("");
   const [paymentSuccess, setPaymentSuccess] = useState("");
+  const [cancellingId, setCancellingId] = useState(null);
+
+  const loadCampaigns = useCallback(async () => {
+    try {
+      const response = await API.get("/campaigns");
+      setCampaigns(response.data.items || []);
+    } catch (requestError) {
+      if (requestError.response?.status === 401) { navigate("/login"); return; }
+      setPageError("Unable to load campaigns right now.");
+    } finally {
+      setLoading(false);
+    }
+  }, [navigate]);
 
   useEffect(() => {
     if (authLoading) return;
-
-    if (!user) {
-      navigate("/login");
-      return;
-    }
-
-    const loadCampaigns = async () => {
-      try {
-        const response = await API.get("/campaigns");
-        setCampaigns(response.data.items || []);
-      } catch (requestError) {
-        if (requestError.response?.status === 401) {
-          navigate("/login");
-          return;
-        }
-        setPageError("Unable to load campaigns right now.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
+    if (!user) { navigate("/login"); return; }
     loadCampaigns();
-  }, [authLoading, user, navigate]);
+  }, [authLoading, user, navigate, loadCampaigns]);
+
+  // Poll every 8s so status changes from admin reflect automatically
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(loadCampaigns, 8000);
+    return () => clearInterval(interval);
+  }, [user, loadCampaigns]);
+
+  const handleCancelCampaign = async (campaignId) => {
+    if (!window.confirm("Cancel this campaign? This cannot be undone.")) return;
+    setCancellingId(campaignId);
+    try {
+      await API.delete(`/campaigns/${campaignId}`);
+      setCampaigns((prev) => prev.filter((c) => c._id !== campaignId));
+    } catch {
+      setPageError("Failed to cancel campaign.");
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   const handleProceedToPayment = async (campaign) => {
     setPaymentError("");
@@ -126,10 +139,7 @@ function Billing() {
           // update from the webhook has time to propagate.
           setTimeout(async () => {
             try {
-              const refreshed = await API.get("/campaigns", {
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              setCampaigns(refreshed.data.items || []);
+              await loadCampaigns();
             } catch {
               // Non-critical — user can refresh manually
             }
@@ -173,15 +183,8 @@ function Billing() {
         return;
       }
       if (requestError.response?.status === 400) {
-        // Campaign already in pending_payment or beyond — refresh list
         setPaymentError(requestError.response.data.message);
-        const token = localStorage.getItem("token");
-        if (token) {
-          const refreshed = await API.get("/campaigns", {
-            headers: { Authorization: `Bearer ${token}` },
-          }).catch(() => null);
-          if (refreshed) setCampaigns(refreshed.data.items || []);
-        }
+        await loadCampaigns();
       } else {
         setPaymentError(
           requestError.response?.data?.message ||
@@ -260,10 +263,10 @@ function Billing() {
 
                 <div className="billing-item-schedule">
                   <span>
-                    {formatDate(campaign.startDate)} →{" "}
-                    {formatDate(campaign.endDate)}
+                    {formatDate(campaign.startDate || campaign.schedule?.startDate)} →{" "}
+                    {formatDate(campaign.endDate || campaign.schedule?.endDate)}
                   </span>
-                  <span>{campaign.repeatRate}x/day</span>
+                  <span>{campaign.repeatRate || "—"}x/day</span>
                   <span>
                     Cap:{" "}
                     {currencyFormatter.format(campaign.dailyBudgetCap || 0)}/day
@@ -284,9 +287,22 @@ function Billing() {
                     onClick={() => handleProceedToPayment(campaign)}
                     disabled={payingId === campaign._id}
                   >
-                    {payingId === campaign._id
-                      ? "Opening payment..."
-                      : "Proceed to payment"}
+                    {payingId === campaign._id ? "Opening payment..." : "Proceed to payment"}
+                  </button>
+                  <button
+                    className="billing-secondary-button"
+                    type="button"
+                    onClick={() => navigate("/campaigns", { state: { editId: campaign._id } })}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="billing-danger-button"
+                    type="button"
+                    onClick={() => handleCancelCampaign(campaign._id)}
+                    disabled={cancellingId === campaign._id}
+                  >
+                    {cancellingId === campaign._id ? "Cancelling..." : "Cancel"}
                   </button>
                 </div>
               </article>
@@ -308,32 +324,28 @@ function Billing() {
           </div>
           <div className="billing-list">
             {resolvedCampaigns.map((campaign) => (
-              <article
-                className="billing-item billing-item-locked"
-                key={campaign._id}
-              >
+              <article className="billing-item billing-item-locked" key={campaign._id}>
                 <div className="billing-item-top">
                   <div>
                     <p className="billing-item-title">{campaign.title}</p>
-                    <p className="billing-item-meta">
-                      {campaign.brandName} • {campaign.robotPlacement}
-                    </p>
+                    <p className="billing-item-meta">{campaign.brandName} • {campaign.robotPlacement}</p>
                   </div>
-                  <span className="billing-badge">
-                    {STATUS_LABELS[campaign.status] || campaign.status}
-                  </span>
+                  <span className="billing-badge">{STATUS_LABELS[campaign.status] || campaign.status}</span>
+                </div>
+                <div className="billing-item-schedule">
+                  <span>{formatDate(campaign.startDate || campaign.schedule?.startDate)} → {formatDate(campaign.endDate || campaign.schedule?.endDate)}</span>
+                  <span>{campaign.repeatRate || "—"}x/day</span>
                 </div>
                 <div className="billing-breakdown-row billing-breakdown-total">
                   <span>Amount paid</span>
-                  <span>
-                    {currencyFormatter.format(campaign.estimatedCost || 0)}
-                  </span>
+                  <span>{currencyFormatter.format(campaign.estimatedCost || 0)}</span>
                 </div>
               </article>
             ))}
           </div>
         </section>
       )}
+
     </div>
   );
 }

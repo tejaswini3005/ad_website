@@ -30,6 +30,12 @@ const campaignSelect = [
   "publicationStatus",
   "isPublic",
   "publishedAt",
+  "startDate",
+  "endDate",
+  "repeatRate",
+  "dailyBudgetCap",
+  "estimatedCost",
+  "placement",
   "budget",
   "schedule",
   "healthScore",
@@ -81,10 +87,7 @@ const listCampaigns = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query);
   const filters = { owner: req.user.userId };
 
-  if (req.query.status) {
-    filters.status = req.query.status;
-  }
-
+  if (req.query.status) filters.status = req.query.status;
   if (req.query.search) {
     filters.$or = [
       { title: { $regex: req.query.search, $options: "i" } },
@@ -98,14 +101,30 @@ const listCampaigns = asyncHandler(async (req, res) => {
     Campaign.countDocuments(filters),
   ]);
 
+  // For pending_payment campaigns with zero/missing cost, recalculate inline
+  const { calculateCampaignEstimate } = require("../utils/campaignPricing");
+  const resolved = await Promise.all(items.map(async (c) => {
+    if (c.status !== "pending_payment" || (c.estimatedCost > 0)) return c.toObject();
+    try {
+      const est = await calculateCampaignEstimate({
+        startDate: c.startDate || c.schedule?.startDate,
+        endDate: c.endDate || c.schedule?.endDate,
+        repeatRate: c.repeatRate,
+        dailyBudgetCap: c.dailyBudgetCap,
+        placement: c.placement,
+        videoDuration: c.videoDuration,
+      });
+      const cost = est.breakdown.estimatedCost;
+      await Campaign.findByIdAndUpdate(c._id, { estimatedCost: cost });
+      return { ...c.toObject(), estimatedCost: cost };
+    } catch {
+      return c.toObject();
+    }
+  }));
+
   res.status(200).json({
-    items,
-    pagination: {
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit) || 1,
-    },
+    items: resolved,
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) || 1 },
   });
 });
 
@@ -434,9 +453,9 @@ const emailCampaignReport = asyncHandler(async (req, res) => {
 });
 
 const estimateCampaignCost = asyncHandler(async (req, res) => {
-  const { startDate, endDate, repeatRate, dailyBudgetCap, placement, timing, audience } = req.body;
+  const { startDate, endDate, repeatRate, dailyBudgetCap, placement, videoDuration } = req.body;
   const { calculateCampaignEstimate } = require("../utils/campaignPricing");
-  const estimate = await calculateCampaignEstimate({ startDate, endDate, repeatRate, dailyBudgetCap, placement, timing, audience });
+  const estimate = await calculateCampaignEstimate({ startDate, endDate, repeatRate, dailyBudgetCap, placement, videoDuration });
   res.status(200).json(estimate);
 });
 

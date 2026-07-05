@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const pricingConfigSchema = new mongoose.Schema(
   {
     baseRatePerDay: { type: Number, required: true, default: 500 },
+    costPerSecond: { type: Number, required: true, default: 10 },
     platformFee: { type: Number, required: true, default: 500 },
     gstRate: { type: Number, required: true, default: 0.18 },
     defaultDurationDays: { type: Number, default: 30 },
@@ -31,6 +32,25 @@ const pricingConfigSchema = new mongoose.Schema(
       metro: { type: Number, default: 1.8 },
       airport: { type: Number, default: 2.0 },
       other: { type: Number, default: 1.0 },
+    },
+    // Peak hours pricing
+    peakMultiplier: { type: Number, default: 1.5 }, // e.g. 1.5 = 50% surcharge during peak
+    peakSchedule: {
+      // Each entry: { day: 0-6 (0=Sun,6=Sat), startHour: 0-23, endHour: 0-23 }
+      // Default: Friday 18:00 – Sunday 23:59
+      type: [
+        {
+          day: { type: Number, min: 0, max: 6 },       // 0=Sun, 1=Mon … 6=Sat
+          startHour: { type: Number, min: 0, max: 23 },
+          endHour: { type: Number, min: 0, max: 23 },
+          _id: false,
+        },
+      ],
+      default: [
+        { day: 5, startHour: 18, endHour: 23 }, // Friday evening
+        { day: 6, startHour: 0,  endHour: 23 }, // Saturday all day
+        { day: 0, startHour: 0,  endHour: 23 }, // Sunday all day
+      ],
     },
     updatedBy: { type: String, default: "" },
   },

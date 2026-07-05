@@ -100,10 +100,22 @@ app.use(morgan("dev"));
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 200,
+    max: process.env.NODE_ENV === "production" ? 200 : 2000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: "Too many requests, please try again later." },
+  }),
+);
+
+// ---- Auth-specific rate limiter ----
+app.use(
+  "/api/auth",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: process.env.NODE_ENV === "production" ? 20 : 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many authentication attempts. Try again soon." },
   }),
 );
 
