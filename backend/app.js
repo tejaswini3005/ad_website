@@ -23,7 +23,7 @@ const pricingRoutes = require("./routes/pricing");
 const adminPaymentRoutes = require("./routes/admin.payments");
 const adminRobotRoutes = require("./routes/admin.robots");
 const adminAnalyticsRoutes = require("./routes/admin.analytics");
-
+const analyticsRoutes = require("./routes/analytics");
 const { notFound } = require("./middleware/notFound");
 const { errorHandler } = require("./middleware/errorHandler");
 
@@ -133,7 +133,7 @@ app.use("/api/pricing", pricingRoutes);
 app.use("/api/admin/payments", adminPaymentRoutes);
 app.use("/api/admin/robots", adminRobotRoutes);
 app.use("/api/admin/analytics", adminAnalyticsRoutes);
-
+app.use("/api/analytics", analyticsRoutes);
 // ---- Error handling (must be last) ----
 app.use(notFound);
 app.use(errorHandler);

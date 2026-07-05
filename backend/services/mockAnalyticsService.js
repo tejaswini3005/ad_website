@@ -193,18 +193,20 @@ const createDemoCampaigns = async (user) => {
       ...blueprint,
       destinationUrl: `https://techligence.in/demo/${index + 1}`,
       verification,
-      status: index === 2 ? "scheduled" : "active",
+      status: index === 2 ? "paused" : "public",
       publicationStatus: "public",
       isPublic: true,
       publishedAt: new Date(),
       budget: {
-        allocated: 12000 + index * 3500,
-        spent: 0,
-        currency: "USD",
-      },
+  allocated: 12000 + index * 3500,
+  spent: 0,
+  currency: "USD",
+  dailyBudgetCap: 500 + index * 100,
+},
+startDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * (12 - index * 2)),
+endDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * (18 + index * 5)),
       schedule: {
-        startDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * (12 - index * 2)),
-        endDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * (18 + index * 5)),
+       
       },
       targeting: {
         audienceSegments: ["Commuters", "Shoppers", "Operators"].slice(0, 2 + (index % 2)),
