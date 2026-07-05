@@ -274,28 +274,29 @@ async function getCampaignAudienceAnalytics(campaignId, ownerId = null) {
  * is fully wired up.
  */
 async function getRevenueAnalytics() {
-  const campaigns = await Campaign.find(
-    {},
-    { brandName: 1, estimatedCost: 1, budget: 1, status: 1 },
-  ).lean();
+  const Payment = require("../models/Payment");
+
+  // Only count paid/partially_refunded payments — same logic as AdminPayments page
+  const payments = await Payment.find(
+    { status: { $in: ["paid", "partially_refunded"] } },
+    { amount: 1, campaign: 1 },
+  )
+    .populate("campaign", "brandName")
+    .lean();
 
   let totalRevenue = 0;
   const byBrandMap = {};
 
-  campaigns.forEach((c) => {
-    const spent = c.budget?.spent || 0;
-    const revenue = spent > 0 ? spent : c.estimatedCost || 0;
-    totalRevenue += revenue;
+  payments.forEach((p) => {
+    const amountInRupees = (p.amount || 0) / 100;
+    const brandName = p.campaign?.brandName || "Unknown";
+    totalRevenue += amountInRupees;
 
-    if (!byBrandMap[c.brandName]) {
-      byBrandMap[c.brandName] = {
-        brandName: c.brandName,
-        revenue: 0,
-        campaignCount: 0,
-      };
+    if (!byBrandMap[brandName]) {
+      byBrandMap[brandName] = { brandName, revenue: 0, campaignCount: 0 };
     }
-    byBrandMap[c.brandName].revenue += revenue;
-    byBrandMap[c.brandName].campaignCount += 1;
+    byBrandMap[brandName].revenue += amountInRupees;
+    byBrandMap[brandName].campaignCount += 1;
   });
 
   const byBrand = Object.values(byBrandMap)
@@ -304,7 +305,7 @@ async function getRevenueAnalytics() {
 
   return {
     totalRevenue: Number(totalRevenue.toFixed(2)),
-    totalCampaigns: campaigns.length,
+    totalCampaigns: payments.length,
     topBrand: byBrand[0]?.brandName || null,
     byBrand,
   };
